@@ -1,83 +1,98 @@
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, send_file
+from flask_socketio import SocketIO
 import numpy as np
-import random
 import os
 import imageio
+import multiprocessing as mp
 import matplotlib.pyplot as plt
+from env import LoadBalancer
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+socketio = SocketIO(app, async_mode='eventlet')
 OUTPUT_FOLDER = 'static/outputs'
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-MAX_LATENCY = 300
-MAX_THROUGHPUT = 1000
-MAX_HEALTH = 100
+# Smooth line function
+def smooth_line(x, y, num_points=300):
+    x_new = np.linspace(min(x), max(x), num_points)
+    return x_new, np.interp(x_new, x, y)
 
-def reward_function(server):
-    load_penalty = -server['load'] / max(1, server['capacity'])
-    latency_score = -server['latency'] / MAX_LATENCY
-    throughput_score = server['throughput'] / MAX_THROUGHPUT
-    health_penalty = -((MAX_HEALTH - server['health']) / MAX_HEALTH)
-    response_penalty = -server['response_time'] / 100
-    failure_penalty = -server['failure_rate']
-    return load_penalty + latency_score + throughput_score + health_penalty + response_penalty + failure_penalty
+# Function to generate a single frame
+def generate_frame(i, time_steps, demand, storage, rewards):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_facecolor('#121212')
+    plt.grid(True, color='gray', linestyle='--', linewidth=0.5)
 
-def select_server(servers):
-    advantages = np.array([reward_function(server) for server in servers])
-    exp_advantages = np.exp(advantages - np.max(advantages))
-    probs = exp_advantages / np.sum(exp_advantages)
-    return np.random.choice(range(len(servers)), p=probs)
+    if i > 1:
+        x_new, demand_smooth = smooth_line(time_steps[:i], demand[:i])
+        x_new, storage_smooth = smooth_line(time_steps[:i], storage[:i])
+        x_new, rewards_smooth = smooth_line(time_steps[:i], rewards[:i])
+
+        plt.plot(x_new, demand_smooth, label='Demand', color='cyan')
+        plt.plot(x_new, storage_smooth, label='Storage', color='magenta')
+        plt.plot(x_new, rewards_smooth, label='Rewards', color='yellow')
+
+    plt.title('Smart Grid Load Balancing', color='white')
+    plt.xlabel('Time Step', color='white')
+    plt.ylabel('Value', color='white')
+    plt.legend(title='Metric', facecolor='#C0BDBD')
+    ax.tick_params(axis='x', colors='white')
+    ax.tick_params(axis='y', colors='white')
+
+    frame_filename = f'{OUTPUT_FOLDER}/frame_{i:03d}.png'
+    plt.savefig(frame_filename, facecolor='#121212')
+    plt.close()
+    return frame_filename
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/run_simulation', methods=['POST'])
-def run_simulation():
-    data = request.json
-    NUM_SERVERS = int(data['num_servers'])
-    NUM_REQUESTS = int(data['num_requests'])
+@socketio.on('run_simulation')
+def run_simulation(data):
+    NUM_STEPS = int(data['num_requests'])
 
-    servers = [{
-        'load': 0, 'latency': random.randint(50, MAX_LATENCY),
-        'throughput': random.randint(500, MAX_THROUGHPUT), 'health': random.randint(50, MAX_HEALTH),
-        'capacity': random.randint(10, 50), 'response_time': random.randint(10, 100),
-        'failure_rate': random.uniform(0, 0.1)
-    } for _ in range(NUM_SERVERS)]
-    
-    frames = []
-    cumulative_reward = 0
-    
-    for i in range(NUM_REQUESTS):
-        selected_server = select_server(servers)
-        servers[selected_server]['load'] += 1
-        servers[selected_server]['health'] = max(0, servers[selected_server]['health'] - 1)
-        
-        reward = reward_function(servers[selected_server])
-        cumulative_reward += reward
-        
-        fig, ax = plt.subplots()
-        ax.bar(range(NUM_SERVERS), [server['load'] for server in servers], color='blue')
-        ax.set_title(f'Request {i+1}/{NUM_REQUESTS} - Server {selected_server}')
-        frame_file = f'{OUTPUT_FOLDER}/frame_{i:03d}.png'
-        plt.savefig(frame_file)
-        frames.append(frame_file)
-        plt.close()
-    
-    gif_file = f'{OUTPUT_FOLDER}/simulation.gif'
-    with imageio.get_writer(gif_file, mode='I', duration=0.1) as gif_writer:
+    env = LoadBalancer()
+    obs = env.reset()
+    time_steps, demand, storage, rewards = [], [], [], []
+
+    for step in range(NUM_STEPS):
+        action = env.action_space.sample()
+        obs, reward, done, _ = env.step(action)
+
+        time_steps.append(step)
+        demand.append(env.demand_history[-1])
+        storage.append(env.storage_history[-1])
+        rewards.append(env.rewards_history[-1])
+
+        # Send live update to UI
+        socketio.emit('update_chart', {
+            'time': step,
+            'demand': demand[-1],
+            'storage': storage[-1],
+            'rewards': rewards[-1]
+        })
+
+    # Generate GIF in parallel
+    with mp.Pool(mp.cpu_count()) as pool:
+        frames = pool.starmap(generate_frame, [(i, time_steps, demand, storage, rewards) for i in range(1, len(time_steps) + 1)])
+
+    gif_file = f'{OUTPUT_FOLDER}/sim_results.gif'
+    with imageio.get_writer(gif_file, mode='I', duration=0.1) as writer:
         for frame in frames:
-            image = imageio.imread(frame)
-            gif_writer.append_data(image)
-    
+            writer.append_data(imageio.imread(frame))
+        for _ in range(10):
+            writer.append_data(imageio.imread(frames[-1]))
+
     for frame in frames:
         os.remove(frame)
-    
-    return jsonify({'message': 'Simulation complete!', 'gif_url': gif_file})
+
+    # Send final GIF URL to UI
+    socketio.emit('simulation_complete', {'gif_url': gif_file})
 
 @app.route('/download_gif')
 def download_gif():
-    return send_file(f'{OUTPUT_FOLDER}/simulation.gif', as_attachment=True)
+    return send_file(f'{OUTPUT_FOLDER}/sim_results.gif', as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    socketio.run(app, debug=True)
