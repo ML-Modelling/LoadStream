@@ -1,82 +1,57 @@
-import gym
-from gym import spaces
 import numpy as np
+import random
 
-
-class LoadBalancer(gym.Env):
-    def __init__(self):
-        super(LoadBalancer, self).__init__()
-
-        self.action_space = spaces.MultiDiscrete([11, 11, 11, 21])
-        self.observation_space = spaces.Box(low=np.array([0, 0], dtype=np.float32),
-                                            high=np.array(
-                                                [20, 20], dtype=np.float32),
-                                            dtype=np.float32)
-
-        self.state = np.array([10, 10], dtype=np.float32)
-        self.time_step = 0
-
-        # Performance metrics
+class LoadBalancer:
+    def __init__(self, num_servers=5):
+        self.num_servers = num_servers
+        self.time_steps_history = []
         self.demand_history = []
         self.storage_history = []
         self.rewards_history = []
-        self.latency_history = []
-        self.throughput_history = []
-        self.response_time_history = []
-        self.efficiency_history = []
-        self.completion_rate_history = []
-        self.time_steps_history = []
-
-    def step(self, action):
-        demand_pattern = 10 + 3 * \
-            np.sin(self.time_step * 0.3 * np.pi) + 2 * \
-            np.sin(self.time_step * 0.1 * np.pi)
-        self.state[0] = demand_pattern + np.random.normal(0, 1.5)
-        self.time_step += 1
-
-        total_production = sum(action[:-1])
-        storage_action = action[-1]
-
-        self.state[1] += total_production - self.state[0]
-        self.state[1] = min(max(self.state[1], 0), 20)
-
-        reward = -abs(total_production -
-                      self.state[0]) - abs(storage_action - self.state[1])
-
-        # Calculate performance metrics
-        latency = np.random.uniform(5, 15)
-        throughput = total_production / (latency + 0.1)
-        response_time = latency + np.random.uniform(0.1, 1.0)
-        efficiency = (total_production / max(self.state[0], 1)) * 100
-        completion_rate = 1 if total_production >= self.state[0] else 0
-        self.demand_history.append(self.state[0])
-        
-
-        self.demand_history.append(self.state[0])
-        self.storage_history.append(self.state[1])
-        self.rewards_history.append(reward)
-        self.latency_history.append(latency)
-        self.throughput_history.append(throughput)
-        self.response_time_history.append(response_time)
-        self.efficiency_history.append(efficiency)
-        self.completion_rate_history.append(completion_rate)
-        self.time_steps_history.append(self.time_step)
-
-        done = False
-        info = {}
-
-        return self.state, reward, done, info
+        self.reset()
 
     def reset(self):
-        self.state = np.array([10, 10], dtype=np.float32)
+        self.servers = [{'load': 0, 'capacity': random.randint(10, 50), 'latency': random.randint(50, 300),
+                         'throughput': random.randint(500, 1000), 'health': random.randint(50, 100),
+                         'response_time': random.randint(10, 100), 'failure_rate': random.uniform(0, 0.1)}
+                        for _ in range(self.num_servers)]
         self.time_step = 0
-        return self.state
+        self.demand = random.randint(50, 200)
+        self.storage = random.randint(20, 100)
+        self.time_steps_history.clear()
+        self.demand_history.clear()
+        self.storage_history.clear()
+        self.rewards_history.clear()
+        return self.get_observation()
 
-    def render(self, mode='console'):
-        if mode != 'console':
-            raise NotImplementedError()
-        print(
-            f"Step: {self.time_step}, Demand: {self.state[0]}, Storage: {self.state[1]}")
+    def get_observation(self):
+        return np.array([server['load'] / max(1, server['capacity']) for server in self.servers])
 
-    def seed(self, seed=None):
-        np.random.seed(seed)
+    def reward_function(self, server):
+        load_penalty = -server['load'] / max(1, server['capacity'])
+        latency_score = -server['latency'] / 300
+        throughput_score = server['throughput'] / 1000
+        health_penalty = -(100 - server['health']) / 100
+        response_penalty = -server['response_time'] / 100
+        failure_penalty = -server['failure_rate']
+        return load_penalty + latency_score + throughput_score + health_penalty + response_penalty + failure_penalty
+
+    def step(self, action):
+        selected_server = self.servers[action]
+        selected_server['load'] += random.randint(5, 20)
+        selected_server['health'] = max(0, selected_server['health'] - random.randint(1, 5))
+        selected_server['response_time'] += random.randint(-5, 5)
+        selected_server['failure_rate'] = min(0.2, selected_server['failure_rate'] + random.uniform(-0.01, 0.01))
+
+        reward = self.reward_function(selected_server)
+        self.time_step += 1
+
+        self.time_steps_history.append(self.time_step)
+        self.demand_history.append(self.demand)
+        self.storage_history.append(self.storage)
+        self.rewards_history.append(reward)
+
+        return self.get_observation(), reward, False, {}
+
+    def action_space(self):
+        return np.arange(self.num_servers)
