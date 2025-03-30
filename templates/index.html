@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Balancing Simulation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="container mt-5">
+    <h1 class="text-center">Adaptive Load Balancing with PPO</h1>
+    <div class="mb-3">
+        <label class="form-label">Number of Servers:</label>
+        <input type="number" id="num_servers" class="form-control" value="5" min="1">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Number of Requests:</label>
+        <input type="number" id="num_requests" class="form-control" value="50" min="1">
+    </div>
+    <button class="btn btn-primary w-100" onclick="startSimulation()">Start Simulation</button>
+    <div id="status" class="mt-3 text-center"></div>
+    <div class="text-center mt-3">
+        <img id="simulation_gif" class="img-fluid" style="display:none;" />
+        <a id="download_link" class="btn btn-success mt-2" style="display:none;">Download Simulation</a>
+    </div>
+    <script>
+        function startSimulation() {
+            let num_servers = document.getElementById("num_servers").value;
+            let num_requests = document.getElementById("num_requests").value;
+            document.getElementById("status").innerText = "Running simulation...";
+            fetch("/run_simulation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ num_servers, num_requests })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("status").innerText = data.message;
+                document.getElementById("simulation_gif").src = data.gif_url;
+                document.getElementById("simulation_gif").style.display = "block";
+                document.getElementById("download_link").href = "/download_gif";
+                document.getElementById("download_link").style.display = "inline-block";
+            });
+        }
+    </script>
+</body>
+</html>
