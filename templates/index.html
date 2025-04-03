@@ -3,70 +3,118 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Load Balancing Simulation</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js"></script>
+    <title>Load Balancing Simulator</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background-color: #121212; color: white; }
-        canvas { background-color: #1E1E1E; border-radius: 10px; padding: 10px; margin: 20px auto; }
-        .btn { padding: 10px 20px; margin: 10px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        .btn:disabled { background-color: #555; }
-        #gifContainer img { width: 50%; margin-top: 20px; border-radius: 10px; }
+        body {
+            display: flex;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background 0.3s ease;
+        }
+        :root {
+            --bg-color: #f8f9fa;
+            --text-color: #212529;
+            --sidebar-bg: #343a40;
+            --sidebar-text: white;
+            --primary-color: #007bff;
+        }
+        .dark-theme {
+            --bg-color: #212529;
+            --text-color: #f8f9fa;
+            --sidebar-bg: #1c1f23;
+            --sidebar-text: #adb5bd;
+            --primary-color: #17a2b8;
+        }
+        .sidebar {
+            width: 250px;
+            background: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            padding: 15px;
+            height: 100vh;
+            position: fixed;
+        }
+        .sidebar-menu li {
+            list-style: none;
+            padding: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .sidebar-menu li:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .main-content {
+            margin-left: 260px;
+            padding: 20px;
+            flex-grow: 1;
+        }
+        .page {
+            display: none;
+        }
+        .active-page {
+            display: block;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border: none;
+        }
     </style>
 </head>
 <body>
-
-    <h1>Smart Load Balancing Simulation</h1>
-    <label for="num_requests">Number of Requests:</label>
-    <input type="number" id="num_requests" value="50" min="1">
-
-    <button class="btn" onclick="startSimulation()">Run Simulation</button>
-    <button class="btn" id="downloadBtn" onclick="downloadGif()" disabled>Download GIF</button>
-
-    <canvas id="loadChart"></canvas>
-
-    <div id="gifContainer"></div>
-
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h4>Dashboard</h4>
+        </div>
+        <ul class="sidebar-menu">
+            <li onclick="showPage('home')"><i class="fas fa-home"></i> Home</li>
+            <li onclick="showPage('simulation')"><i class="fas fa-play"></i> Simulation</li>
+            <li onclick="showPage('charts')"><i class="fas fa-chart-bar"></i> Charts</li>
+            <li onclick="showPage('reports')"><i class="fas fa-file-alt"></i> Reports</li>
+            <li onclick="showPage('settings')"><i class="fas fa-cog"></i> Settings</li>
+            <li onclick="downloadReport()"><i class="fas fa-download"></i> Download Report</li>
+            <li onclick="toggleTheme()"><i class="fas fa-moon"></i> Toggle Theme</li>
+        </ul>
+    </div>
+    <div class="main-content">
+        <div id="home" class="page active-page">
+            <h2>Welcome to Load Balancing Simulator</h2>
+            <p>Analyze server load distribution and optimize resource allocation.</p>
+        </div>
+        <div id="simulation" class="page">
+            <h2>Simulation</h2>
+            <div class="mb-3">
+                <label>Number of Requests:</label>
+                <input type="number" id="numRequests" class="form-control" min="1" value="50">
+            </div>
+            <button class="btn btn-primary" onclick="startSimulation()">Run Simulation</button>
+            <div id="simulationStatus"></div>
+            <div id="requestLog" class="request-log"></div>
+            <img id="simulationGif" src="" class="img-fluid" style="display:none;">
+        </div>
+        <div id="charts" class="page">
+            <h2>Charts & Data Visualization</h2>
+            <canvas id="chartCanvas"></canvas>
+        </div>
+        <div id="reports" class="page">
+            <h2>Simulation Reports</h2>
+            <button class="btn btn-success" onclick="downloadReport()">Download Report</button>
+        </div>
+        <div id="settings" class="page">
+            <h2>Settings</h2>
+            <button class="btn btn-secondary" onclick="toggleTheme()">Toggle Dark/Light Mode</button>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
-        let socket = io();
-        let ctx = document.getElementById('loadChart').getContext('2d');
-        let loadChart = new Chart(ctx, {
-            type: 'line',
-            data: { labels: [], datasets: [
-                    { label: 'Demand', borderColor: 'cyan', data: [] },
-                    { label: 'Storage', borderColor: 'magenta', data: [] },
-                    { label: 'Rewards', borderColor: 'yellow', data: [] }
-                ] },
-            options: {
-                responsive: true,
-                animation: { duration: 500 },
-                scales: { x: { display: true, title: { display: true, text: 'Time Step', color: 'white' } },
-                          y: { display: true, title: { display: true, text: 'Value', color: 'white' } } }
-            }
-        });
-
-        function startSimulation() {
-            let numRequests = document.getElementById('num_requests').value;
-            socket.emit('run_simulation', { num_requests: numRequests });
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(page => page.style.display = 'none');
+            document.getElementById(pageId).style.display = 'block';
         }
-
-        socket.on('update_chart', function(data) {
-            loadChart.data.labels.push(data.time);
-            loadChart.data.datasets[0].data.push(data.demand);
-            loadChart.data.datasets[1].data.push(data.storage);
-            loadChart.data.datasets[2].data.push(data.rewards);
-            loadChart.update();
-        });
-
-        socket.on('simulation_complete', function(data) {
-            document.getElementById('gifContainer').innerHTML = `<img src="${data.gif_url}" alt="Simulation GIF">`;
-            document.getElementById('downloadBtn').disabled = false;
-        });
-
-        function downloadGif() {
-            window.location.href = "/download_gif";
+        function toggleTheme() {
+            document.body.classList.toggle('dark-theme');
         }
     </script>
-
 </body>
 </html>
