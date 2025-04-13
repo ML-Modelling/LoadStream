@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>LoadStream Report</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="/static/assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="/static/assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      background: #f8f9fa;
+      padding-top: 60px;
+    }
+
+    .report-section {
+      padding: 40px 0;
+    }
+
+    .metric-box {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      margin-bottom: 20px;
+    }
+
+    .metric-box h5 {
+      color: #0d6efd;
+      font-weight: bold;
+    }
+
+    .report-img {
+      max-width: 100%;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.08);
+      margin-top: 20px;
+    }
+
+    .title-icon {
+      margin-right: 10px;
+    }
+  </style>
+</head>
+
+<body>
+    <header id="header" class="header fixed-top bg-white shadow-sm">
+    <nav class="navbar navbar-expand-lg navbar-light container-fluid px-4">
+      <a class="navbar-brand" href="/">LoadStream</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+        aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+        <ul class="navbar-nav gap-3">
+          <li class="nav-item">
+            <a class="nav-link" href="/simulation.html">Simulation</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/chart.html">Chart</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/report.html">Reports</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/analysis.html">Analysis</a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+  </header>
+
+  <main class="main" style="margin-top: 90px;">
+  <div class="container report-section">
+    <div class="text-center mb-4">
+      <h2><i class="bi bi-journal-check title-icon"></i>Simulation Report</h2>
+      <p class="text-muted">Detailed results and performance overview of your recent load balancing simulation.</p>
+    </div>
+
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% else %}
+        <p><strong>Total Runs:</strong> {{ summary.total_runs }}</p>
+        <p><strong>Average Reward:</strong> {{ summary.avg_reward }}</p>
+        <p><strong>Average Servers:</strong> {{ summary.avg_servers }}</p>
+        <p><strong>Average Requests:</strong> {{ summary.avg_requests }}</p>
+
+        <img src="{{ url_for('static', filename='outputs/summary_report.png') }}" alt="Summary Chart" width="600">
+
+        <br><br>
+        <a href="{{ url_for('static', filename='outputs/summary_report.png') }}" download>Download Report Image</a>
+    {% endif %}
+</main>
+</body>
+</html>
